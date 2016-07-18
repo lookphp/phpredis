@@ -465,18 +465,11 @@ PHP_REDIS_API char *redis_sock_read_bulk_reply(RedisSock *redis_sock, int bytes 
     int offset = 0;
     size_t got;
 
-    char * reply;
+    char *reply, c[2];
 
-    if(-1 == redis_check_eof(redis_sock, 0 TSRMLS_CC)) {
+    if (-1 == bytes || -1 == redis_check_eof(redis_sock, 0 TSRMLS_CC)) {
         return NULL;
     }
-
-    if (bytes == -1) {
-        return NULL;
-    } else {
-        char c;
-        int i;
-
         reply = emalloc(bytes+1);
 
         while(offset < bytes) {
@@ -490,10 +483,7 @@ PHP_REDIS_API char *redis_sock_read_bulk_reply(RedisSock *redis_sock, int bytes 
             }
             offset += got;
         }
-        for(i = 0; i < 2; i++) {
-            php_stream_read(redis_sock->stream, &c, 1);
-        }
-    }
+	php_stream_read(redis_sock->stream, c, 2);
 
     reply[bytes] = 0;
     return reply;
@@ -980,6 +970,7 @@ PHP_REDIS_API zval *redis_parse_info_response(char *response) {
         cur = pos + 1;
         pos = strchr(cur, '\r');
         if(pos == NULL) {
+            efree(key);
             break;
         }
         value = emalloc(pos - cur + 1);
@@ -1767,6 +1758,7 @@ PHP_REDIS_API void redis_send_discard(INTERNAL_FUNCTION_PARAMETERS,
         efree(response);
         RETURN_TRUE;
     }
+    efree(response);
     RETURN_FALSE;
 }
 
@@ -2200,7 +2192,6 @@ redis_unserialize(RedisSock* redis_sock, const char *val, int val_len,
             if (rv_free==1) efree(*return_value);
 #endif
             return 0;
-            break;
     }
     return 0;
 }
@@ -2454,6 +2445,8 @@ redis_read_variant_reply(INTERNAL_FUNCTION_PARAMETERS, RedisSock *redis_sock,
             break;
         default:
             // Protocol error
+            zval_dtor(z_ret);
+            efree(z_ret);
             zend_throw_exception_ex(redis_exception_ce, 0 TSRMLS_CC, 
                 "protocol error, got '%c' as reply-type byte\n", reply_type);
             return FAILURE;
