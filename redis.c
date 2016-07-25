@@ -60,7 +60,7 @@ extern zend_class_entry *redis_cluster_ce;
 zend_class_entry *redis_ce;
 zend_class_entry *redis_exception_ce;
 extern zend_class_entry *redis_cluster_exception_ce;
-zend_class_entry *spl_ce_RuntimeException = NULL;
+static zend_class_entry *spl_ce_RuntimeException = NULL;
 
 extern zend_function_entry redis_array_functions[];
 extern zend_function_entry redis_cluster_functions[];
@@ -548,11 +548,6 @@ static void add_class_constants(zend_class_entry *ce, int is_cluster TSRMLS_DC) 
 
     zend_declare_class_constant_stringl(ce, "AFTER", 5, "after", 5 TSRMLS_CC);
     zend_declare_class_constant_stringl(ce, "BEFORE", 6, "before", 6 TSRMLS_CC);
-
-#ifdef PHP_SESSION
-    php_session_register_module(&ps_mod_redis);
-    php_session_register_module(&ps_mod_redis_cluster);
-#endif
 }
 
 /**
@@ -623,6 +618,11 @@ PHP_MINIT_FUNCTION(redis)
     /* Add shared class constants to Redis and RedisCluster objects */
     add_class_constants(redis_ce, 0 TSRMLS_CC);
     add_class_constants(redis_cluster_ce, 1 TSRMLS_CC);
+    
+#ifdef PHP_SESSION
+    php_session_register_module(&ps_mod_redis);
+    php_session_register_module(&ps_mod_redis_cluster);
+#endif
 
     return SUCCESS;
 }
@@ -830,22 +830,11 @@ PHP_METHOD(Redis, bitpos)
  */
 PHP_METHOD(Redis, close)
 {
-    zval *object;
-    RedisSock *redis_sock = NULL;
+    RedisSock *redis_sock = redis_sock_get_connected(INTERNAL_FUNCTION_PARAM_PASSTHRU);
 
-    if (zend_parse_method_parameters(ZEND_NUM_ARGS() TSRMLS_CC, getThis(), "O",
-        &object, redis_ce) == FAILURE) {
-        RETURN_FALSE;
-    }
-
-    if (redis_sock_get(object, &redis_sock TSRMLS_CC, 0) < 0) {
-        RETURN_FALSE;
-    }
-
-    if (redis_sock_disconnect(redis_sock TSRMLS_CC)) {
+    if (redis_sock && redis_sock_disconnect(redis_sock TSRMLS_CC)) {
         RETURN_TRUE;
     }
-
     RETURN_FALSE;
 }
 /* }}} */
@@ -3980,4 +3969,4 @@ PHP_METHOD(Redis, georadiusbymember) {
     REDIS_PROCESS_CMD(georadiusbymember, redis_read_variant_reply);
 }
 
-/* vim: set tabstop=4 softtabstops=4 noexpandtab shiftwidth=4: */
+/* vim: set tabstop=4 softtabstop=4 noexpandtab shiftwidth=4: */

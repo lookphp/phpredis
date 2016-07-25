@@ -246,7 +246,7 @@ persistent equivalents.
 $redis->pconnect('127.0.0.1', 6379);
 $redis->pconnect('127.0.0.1'); // port 6379 by default - same connection like before.
 $redis->pconnect('127.0.0.1', 6379, 2.5); // 2.5 sec timeout and would be another connection than the two before.
-$redis->pconnect('127.0.0.1', 6379, 2.5, 'x'); // x is sent as persistent_id and would be another connection the the three before.
+$redis->pconnect('127.0.0.1', 6379, 2.5, 'x'); // x is sent as persistent_id and would be another connection than the three before.
 $redis->pconnect('/tmp/redis.sock'); // unix domain socket - would be another connection than the four before.
 ~~~
 
@@ -1421,10 +1421,12 @@ $redis->hLen('h'); /* returns 2 */
 _**Description**_: Removes a value from the hash stored at key. If the hash table doesn't exist, or the key doesn't exist, `FALSE` is returned.
 ##### *Parameters*
 *key*
-*hashKey*
+*hashKey1*
+*hashKey2*
+...
 
 ##### *Return value*
-*BOOL* `TRUE` in case of success, `FALSE` in case of failure
+*LONG* the number of deleted keys, 0 if the key doesn't exist, `FALSE` if the key isn't a hash.
 
 
 ### hKeys
