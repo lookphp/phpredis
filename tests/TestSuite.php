@@ -27,6 +27,19 @@ class TestSuite {
 
     public function getHost() { return $this->str_host; }
 
+    /**
+     * Returns the fully qualified host path,
+     * which may be used directly for php.ini parameters like session.save_path
+     *
+     * @return null|string
+     */
+    protected function getFullHostPath()
+    {
+        return $this->str_host
+            ? 'tcp://' . $this->str_host . ':6379'
+            : null;
+    }
+
     public static function make_bold($str_msg) {
         return self::$_boo_colorize
             ? self::$BOLD_ON . $str_msg . self::$BOLD_OFF
@@ -52,16 +65,25 @@ class TestSuite {
     }
 
     protected function assertFalse($bool) {
-        $this->assertTrue(!$bool);
-    }
-
-    protected function assertTrue($bool) {
-        if($bool)
-            return;
+        if(!$bool)
+            return true;
 
         $bt = debug_backtrace(false);
         self::$errors []= sprintf("Assertion failed: %s:%d (%s)\n",
             $bt[0]["file"], $bt[0]["line"], $bt[1]["function"]);
+
+        return false;
+    }
+
+    protected function assertTrue($bool) {
+        if($bool)
+            return true;
+
+        $bt = debug_backtrace(false);
+        self::$errors []= sprintf("Assertion failed: %s:%d (%s)\n",
+            $bt[0]["file"], $bt[0]["line"], $bt[1]["function"]);
+
+        return false;
     }
 
     protected function assertLess($a, $b) {
@@ -82,6 +104,15 @@ class TestSuite {
         self::$errors []= sprintf("Assertion failed (%s !== %s): %s:%d (%s)\n",
             print_r($a, true), print_r($b, true),
             $bt[0]["file"], $bt[0]["line"], $bt[1]["function"]);
+    }
+
+    protected function assertPatternMatch($str_test, $str_regex) {
+        if (preg_match($str_regex, $str_test))
+            return;
+
+        $bt = debug_backtrace(false);
+        self::$errors []= sprintf("Assertion failed ('%s' doesnt match '%s'): %s:%d (%s)\n",
+            $str_test, $str_regex, $bt[0]["file"], $bt[0]["line"], $bt[1]["function"]);
     }
 
     protected function markTestSkipped($msg='') {

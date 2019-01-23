@@ -23,6 +23,16 @@ class Redis_Cluster_Test extends Redis_Test {
         RedisCluster::FAILOVER_DISTRIBUTE
     );
 
+    /**
+     * @var string
+     */
+    protected $sessionPrefix = 'PHPREDIS_CLUSTER_SESSION:';
+
+    /**
+     * @var string
+     */
+    protected $sessionSaveHandler = 'rediscluster';
+
     /* Tests we'll skip all together in the context of RedisCluster.  The 
      * RedisCluster class doesn't implement specialized (non-redis) commands
      * such as sortAsc, or sortDesc and other commands such as SELECT are
@@ -32,6 +42,24 @@ class Redis_Cluster_Test extends Redis_Test {
     public function testWait()     { return $this->markTestSkipped(); }
     public function testSelect()   { return $this->markTestSkipped(); }
     public function testReconnectSelect() { return $this->markTestSkipped(); }
+    public function testMultipleConnect() { return $this->markTestSkipped(); }
+    public function testDoublePipeNoOp() { return $this->markTestSkipped(); }
+    public function testSwapDB() { return $this->markTestSkipped(); }
+    public function testConnectException() { return $this->markTestSkipped(); }
+
+    /* Session locking feature is currently not supported in in context of Redis Cluster.
+       The biggest issue for this is the distribution nature of Redis cluster */
+    public function testSession_lockKeyCorrect() { return $this->markTestSkipped(); }
+    public function testSession_lockingDisabledByDefault() { return $this->markTestSkipped(); }
+    public function testSession_lockReleasedOnClose() { return $this->markTestSkipped(); }
+    public function testSession_ttlMaxExecutionTime() { return $this->markTestSkipped(); }
+    public function testSession_ttlLockExpire() { return $this->markTestSkipped(); }
+    public function testSession_lockHoldCheckBeforeWrite_otherProcessHasLock() { return $this->markTestSkipped(); }
+    public function testSession_lockHoldCheckBeforeWrite_nobodyHasLock() { return $this->markTestSkipped(); }
+    public function testSession_correctLockRetryCount() { return $this->markTestSkipped(); }
+    public function testSession_defaultLockRetryCount() { return $this->markTestSkipped(); }
+    public function testSession_noUnlockOfOtherProcess() { return $this->markTestSkipped(); }
+    public function testSession_lockWaitTime() { return $this->markTestSkipped(); }
 
     /* Load our seeds on construction */
     public function __construct() {
@@ -291,6 +319,17 @@ class Redis_Cluster_Test extends Redis_Test {
         $this->assertTrue($ret === array('44'));
     }
 
+    public function testDiscard()
+    {
+        /* start transaction */
+        $this->redis->multi();
+
+        /* Set and get in our transaction */
+        $this->redis->set('pipecount','over9000')->get('pipecount');
+
+        $this->assertTrue($this->redis->discard());
+    }
+
     /* RedisCluster::script() is a 'raw' command, which requires a key such that
      * we can direct it to a given node */
     public function testScript() {
@@ -343,6 +382,69 @@ class Redis_Cluster_Test extends Redis_Test {
         $this->assertTrue(false === $this->redis->evalsha($scr,Array($str_key), 1));
         $this->assertTrue(1 === $this->redis->eval($scr,Array($str_key), 1));
         $this->assertTrue(1 === $this->redis->evalsha($sha,Array($str_key), 1));
+    }
+    
+    public function testEvalBulkResponse() {
+        $str_key1 = uniqid() . '-' . rand(1,1000) . '{hash}';
+        $str_key2 = uniqid() . '-' . rand(1,1000) . '{hash}';
+
+        $this->redis->script($str_key1, 'flush');
+        $this->redis->script($str_key2, 'flush');
+
+        $scr = "return {KEYS[1],KEYS[2]}";
+
+        $result = $this->redis->eval($scr,Array($str_key1, $str_key2), 2);
+
+        $this->assertTrue($str_key1 === $result[0]);
+        $this->assertTrue($str_key2 === $result[1]);
+    }
+
+    public function testEvalBulkResponseMulti() {
+        $str_key1 = uniqid() . '-' . rand(1,1000) . '{hash}';
+        $str_key2 = uniqid() . '-' . rand(1,1000) . '{hash}';
+
+        $this->redis->script($str_key1, 'flush');
+        $this->redis->script($str_key2, 'flush');
+
+        $scr = "return {KEYS[1],KEYS[2]}";
+
+        $this->redis->multi();
+        $this->redis->eval($scr,Array($str_key1, $str_key2), 2);
+
+        $result = $this->redis->exec();
+
+        $this->assertTrue($str_key1 === $result[0][0]);
+        $this->assertTrue($str_key2 === $result[0][1]);
+    }
+
+    public function testEvalBulkEmptyResponse() {
+        $str_key1 = uniqid() . '-' . rand(1,1000) . '{hash}';
+        $str_key2 = uniqid() . '-' . rand(1,1000) . '{hash}';
+
+        $this->redis->script($str_key1, 'flush');
+        $this->redis->script($str_key2, 'flush');
+
+        $scr = "for _,key in ipairs(KEYS) do redis.call('SET', key, 'value') end";
+
+        $result = $this->redis->eval($scr,Array($str_key1, $str_key2), 2);
+
+        $this->assertTrue(null === $result);
+    }
+
+    public function testEvalBulkEmptyResponseMulti() {
+        $str_key1 = uniqid() . '-' . rand(1,1000) . '{hash}';
+        $str_key2 = uniqid() . '-' . rand(1,1000) . '{hash}';
+
+        $this->redis->script($str_key1, 'flush');
+        $this->redis->script($str_key2, 'flush');
+
+        $scr = "for _,key in ipairs(KEYS) do redis.call('SET', key, 'value') end";
+
+        $this->redis->multi();
+        $this->redis->eval($scr,Array($str_key1, $str_key2), 2);
+        $result = $this->redis->exec();
+
+        $this->assertTrue(null === $result[0]);
     }
 
     /* Cluster specific introspection stuff */
@@ -505,6 +607,31 @@ class Redis_Cluster_Test extends Redis_Test {
     protected function rawCommandArray($key, $args) {
         array_unshift($args, $key);
         return call_user_func_array(Array($this->redis, 'rawCommand'), $args);
+    }
+
+    public function testSession()
+    {
+        @ini_set('session.save_handler', 'rediscluster');
+        @ini_set('session.save_path', implode('&', array_map(function ($seed) {
+            return 'seed[]=' . $seed;
+        }, self::$_arr_node_map)) . '&failover=error');
+        if (!@session_start()) {
+            return $this->markTestSkipped();
+        }
+        session_write_close();
+        $this->assertTrue($this->redis->exists('PHPREDIS_CLUSTER_SESSION:' . session_id()));
+    }
+
+    /**
+     * @inheritdoc
+     */
+    protected function getFullHostPath()
+    {
+        $hosts = array_map(function ($host) {
+            return 'seed[]=' . $host . '';
+        }, self::$_arr_node_map);
+
+        return implode('&', $hosts);
     }
 }
 ?>
